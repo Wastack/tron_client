@@ -1,20 +1,21 @@
-package gui
+package engine
 
 import (
     "github.com/tron_client/types"
-    gc "github.com/rthornton128/goncurses"
     "github.com/tron_client/client"
+    "github.com/tron_client/gui"
     "log"
     "strings"
     "fmt"
     "strconv"
+    "encoding/json"
 )
 
 const sys_n string = "Sys"
 
 type command struct {
     description string
-    execute func(*Chat, ...string)
+    execute func(*LobbyEngine, ...string)
 }
 
 type commandMap map[string]command
@@ -26,10 +27,10 @@ var commands commandMap= commandMap{
     "/disc": {"Disconnect from server", executeDisconnect},
     "/players": {"List players", executePlayers},
     "/setname": {"Set your name", executeSetname},
-    "/exit": {"Close application", func(*Chat,...string){}}, // exit is handle elsewhere
+    "/exit": {"Close application", func(*LobbyEngine,...string){}}, // exit is handle elsewhere
 }
 
-func executeSetname(c *Chat, args...string) {
+func executeSetname(c *LobbyEngine, args...string) {
     if len(args) < 1 {
 	c.PushMessage(sys_n, fmt.Sprintf("Your name is: %s", c.myPlayer.Name))
 	return
@@ -42,8 +43,8 @@ func executeSetname(c *Chat, args...string) {
     c.myPlayer.Name = *name
 }
 
-func executePlayers(c *Chat, _...string) {
-    if !c.net.IsConnected() {
+func executePlayers(c *LobbyEngine, _...string) {
+    if c.net == nil {
         c.PushMessage(sys_n, "You are not connected")
     }
 
@@ -56,21 +57,33 @@ func executePlayers(c *Chat, _...string) {
     }
 }
 
-func executeDisconnect(c *Chat, _...string) {
-    if !c.net.IsConnected() {
+func executeDisconnect(c *LobbyEngine, _...string) {
+    if c.net == nil {
         c.PushMessage(sys_n, "You are not connected")
 	return
     }
     c.stopRec <- true
     c.net.Close()
+    c.net = nil
 }
 
-func executeHelp(c *Chat, _...string) {
+func (c *LobbyEngine) Close() {
+    // close network connection
+    if c.net != nil {
+	c.stopRec <- true
+    	c.net.Close()
+	c.net = nil
+    }
+    // close GUI
+    c.chatGui.Close()
+}
+
+func executeHelp(c *LobbyEngine, _...string) {
     c.PushMessage(sys_n, "You need help? SUCKER!! (not implemented)")
 }
 
-func executeConnect(c *Chat, args...string) {
-    if c.net.IsConnected(){
+func executeConnect(c *LobbyEngine, args...string) {
+    if c.net != nil {
         c.PushMessage(sys_n, "You are already connected. Try to disconnect first with: '/disc[onnect]")
     }
     address, port := "localhost", 8765
@@ -91,8 +104,6 @@ func executeConnect(c *Chat, args...string) {
 	return
     }
     c.net = cli
-    log.Print("Start listening to server")
-
     resp, err := c.net.ConnectRequest(c.myPlayer.Name, "", "private")
     if err != nil {
 	c.PushMessage(sys_n, fmt.Sprintf("Server error: %s", err.Error()))
@@ -104,6 +115,7 @@ func executeConnect(c *Chat, args...string) {
     go cli.Listen()
 
     // Receive messages
+    log.Print("Start receiving messages from server")
     go func(stop chan bool) {
 	for {
 	    select {
@@ -111,7 +123,7 @@ func executeConnect(c *Chat, args...string) {
 	        return
 	    case m := <- cli.Msgs:
 		switch m.GetType() {
-		case "chat":
+		case "LobbyEngine":
 		    chatMsg := m.(*types.ChatMsg)
 		    p, err := c.playerByColor(chatMsg.Color)
 	            if err != nil {
@@ -149,114 +161,60 @@ func executeConnect(c *Chat, args...string) {
 	    }
 	}
     }(c.stopRec)
+
+    // notify user of successfull connection
+    c.PushMessage(sys_n, "Successfully connected")
 }
 
-type Chat struct {
+type LobbyEngine struct {
     UserInput chan string
 
     players []types.LobbyPlayer
     myPlayer types.LobbyPlayer
     msg_history []string
 
-
-    scr *gc.Window
-    outputWin *gc.Window
-    inputWin *gc.Window
+    chatGui gui.ChatGui
 
     net *client.Client
     stopRec chan bool
 }
 
-func NewChat(guiType types.GuiKind) *Chat {
-    log.Print("Create chat window")
-    screen, err := gc.Init()
-    if err != nil {
-	log.Fatal("Init screen:", err)
+func NewLobbyEngine(guiType types.GuiKind) *LobbyEngine {
+    var g gui.ChatGui
+    switch(guiType) {
+    case types.NCurses:
+	g = gui.NewNCurse()
+    case types.Headless:
+	g = gui.NewHeadlessChat()
     }
-    rows, cols := screen.MaxYX()
-    outwin, err := gc.NewWindow(rows-3, cols-2, 0, 0)
-    if err != nil {
-	log.Fatal("Init output window:", err)
-    }
-    inwin, err := gc.NewWindow(3, cols-2, rows-3, 0)
-    if err != nil {
-	log.Fatal("Init input window:", err)
-    }
-    c := Chat {
+
+    c := LobbyEngine {
 	UserInput: make(chan string, 1),
 	stopRec: make(chan bool),
-	scr: screen,
-	outputWin: outwin,
-	inputWin: inwin,
 	msg_history: make([]string, 0, 20),
+	chatGui: g,
     }
     c.myPlayer.Name = "Buddy"
-
-    // clear
     c.PushMessage(sys_n, "Hello! Good luck today. type '/help' for available commands")
-    c.clearInput()
-    gc.Update()
     return &c
 }
 
-func (c *Chat) PushMessage(sender string, msg string) {
+func (c *LobbyEngine) PushMessage(sender string, msg string) {
     if len(msg) < 1 {
 	log.Printf("Attempt tp push empty message.")
     }
     c.msg_history = append(c.msg_history, fmt.Sprintf("%s: %s", sender, msg))
-    c.outputWin.Erase()
-
-    // get number of available columns
-    h, _ := c.outputWin.MaxYX()
-    max_cols := h - 2
-    start_index := 0
-    if overflow := len(c.msg_history) - max_cols; overflow > 0 {
-	start_index = overflow
-    }
-
-    _ = start_index
-    for i, v := range c.msg_history[start_index:] {
-    	c.outputWin.Move(i+1,1)
-    	c.outputWin.Println(v)
-    }
-    c.outputWin.Box(gc.ACS_VLINE, gc.ACS_HLINE)
-    c.outputWin.NoutRefresh()
-    gc.Update()
 }
 
 
-func (c *Chat) Close() {
-    c.outputWin.Delete()
-    c.inputWin.Delete()
-    gc.End()
-}
-
-func (c *Chat) clearInput() {
-    c.inputWin.Erase()
-    c.inputWin.Move(1,1)
-    c.inputWin.Box(gc.ACS_VLINE, gc.ACS_HLINE)
-    c.inputWin.Print("> ")
-    c.inputWin.NoutRefresh()
-}
-
-func (c *Chat) Listen() {
+func (c *LobbyEngine) Listen() {
+    log.Print("Start fetching messages from chat")
     for {
-	c.clearInput()
-    	gc.Update()
-	_, width := c.inputWin.MaxYX()
-	inp, err := c.inputWin.GetString(width-6)
-	if err != nil {
-	    log.Fatal("Could not fetch user input:", err)
-	}
-	if len(inp) < 1 {
-	    continue
-	}
-	c.clearInput()
-
+	msg := c.chatGui.FetchOne()
 	// it's a command
-	if inp[0] == '/'{
+	if msg[0] == '/'{
 
-	    words := strings.Fields(inp)
+	    words := strings.Fields(msg)
 	    if words[0] == "/exit" {
 		return
 	    }
@@ -267,12 +225,22 @@ func (c *Chat) Listen() {
 	    }
 	} else {
 	    // simple message
-	    c.PushMessage(c.myPlayer.Name, inp)
+	    c.PushMessage(c.myPlayer.Name, msg)
+	    chatMsg := types.ChatMsg{
+		&types.JsonMsg{Type: "chat"},
+		msg,
+		c.myPlayer.Color,
+	    }
+	    bytes, err := json.Marshal(chatMsg)
+	    if err != nil {
+		log.Fatalf("Unable to marshal chat message")
+	    }
+	    c.net.SendMessage(bytes)
 	}
     }
 }
 
-func (c *Chat) playerByColor(pc types.PlayerColor) (*types.LobbyPlayer, error) {
+func (c *LobbyEngine) playerByColor(pc types.PlayerColor) (*types.LobbyPlayer, error) {
     if pc == c.myPlayer.Color {
 	return &c.myPlayer, nil
     }
@@ -284,7 +252,7 @@ func (c *Chat) playerByColor(pc types.PlayerColor) (*types.LobbyPlayer, error) {
     return nil, fmt.Errorf("Unknown player identifier")
 }
 
-func (c *Chat) removeByColor(pc types.PlayerColor) error {
+func (c *LobbyEngine) removeByColor(pc types.PlayerColor) error {
     // remove from players list
     var i int
     for ; i< len(c.players); i++ {

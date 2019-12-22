@@ -91,10 +91,6 @@ func (c *Client) SendMessage(message []byte) error {
     return nil
 }
 
-func (c *Client) IsConnected() bool {
-    return c.connected
-}
-
 func (c *Client) ConnectRequest(name string, groupId string,
 	privacy string) (*types.ConnRespMsg, error) {
     resp := &types.ConnRespMsg{}
@@ -102,6 +98,7 @@ func (c *Client) ConnectRequest(name string, groupId string,
 	return resp, fmt.Errorf("Socket is closed")
     }
     // send connection request
+    log.Print("Send connect request to server")
     conReq, err := json.Marshal(types.ConnReqMsg{
         JsonMsg: &types.JsonMsg{ Type: "connect"},
         Name: "Wastack",
@@ -112,6 +109,7 @@ func (c *Client) ConnectRequest(name string, groupId string,
     }
     c.SendMessage(conReq)
 
+    log.Print("Receiving connect response")
     msg, err := bufio.NewReader(c.conn).ReadString('\n')
     if err != nil {
         log.Printf("Connection error: %s", err.Error())
@@ -121,6 +119,7 @@ func (c *Client) ConnectRequest(name string, groupId string,
 	log.Printf("Unexpected msg from server: %s", msg)
 	return resp, err
     }
+    log.Print("Connect response received")
     return resp, nil
 }
 

@@ -1,7 +1,8 @@
 package main
 
 import (
-    "github.com/tron_client/gui"
+    "github.com/tron_client/engine"
+    "github.com/tron_client/types"
     "os"
     "log"
 )
@@ -14,7 +15,7 @@ func main() {
     defer f.Close()
     log.SetOutput(f)
 
-    chat := gui.NewChat()
-    chat.Listen()
-    chat.Close()
+    lobby := engine.NewLobbyEngine(types.NCurses)
+    lobby.Listen()
+    lobby.Close()
 }
