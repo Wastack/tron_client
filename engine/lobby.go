@@ -70,11 +70,13 @@ func executeDisconnect(c *LobbyEngine, _ ...string) {
 func (c *LobbyEngine) Close() {
 	// close network connection
 	if c.net != nil {
+		log.Printf("Closing connection")
 		c.stopRec <- true
 		c.net.Close()
 		c.net = nil
 	}
 	// close GUI
+	log.Printf("Closing GUI")
 	c.chatGui.Close()
 }
 
@@ -120,6 +122,7 @@ func executeConnect(c *LobbyEngine, args ...string) {
 		for {
 			select {
 			case <-stop:
+				log.Printf("Listening to server stopped")
 				return
 			case m := <-cli.Msgs:
 				log.Printf("Message received: %s", m)
@@ -158,6 +161,10 @@ func executeConnect(c *LobbyEngine, args ...string) {
 					default:
 						c.PushMessage(sys_n, "Error: malformed message")
 					}
+				case "start_game":
+					// advance to game phase
+					c.Close()
+					return
 				}
 			}
 		}
@@ -191,7 +198,7 @@ func NewLobbyEngine(guiType types.GuiKind) *LobbyEngine {
 
 	c := LobbyEngine{
 		IsListening: make(chan bool, 1),
-		stopRec:     make(chan bool),
+		stopRec:     make(chan bool, 1),
 		msg_history: make([]string, 0, 20),
 		chatGui:     g,
 	}
@@ -208,10 +215,17 @@ func (c *LobbyEngine) PushMessage(sender string, msg string) {
 	c.chatGui.SetChatHistory(c.msg_history)
 }
 
-func (c *LobbyEngine) Listen() {
+func (c *LobbyEngine) ListenUserInput() {
 	log.Print("Start fetching messages from chat")
 	for {
-		msg := c.chatGui.FetchOne()
+		var msg string
+		msg, _ = c.chatGui.FetchOne()
+		if msg == "" {
+			log.Printf("Chat GUI closed")
+			c.chatGui = nil
+			return
+		}
+
 		// it's a command
 		if msg[0] == '/' {
 
@@ -227,10 +241,10 @@ func (c *LobbyEngine) Listen() {
 		} else {
 			// simple message
 			c.PushMessage(c.myPlayer.Name, msg)
-			chatMsg := types.ChatMsg{
-				&types.JsonMsg{Type: "chat"},
-				msg,
-				c.myPlayer.Color,
+			chatMsg := &types.ChatMsg{
+				JsonMsg: &types.JsonMsg{Type: "chat"},
+				Message: msg,
+				Color:   c.myPlayer.Color,
 			}
 			bytes, err := json.Marshal(chatMsg)
 			if err != nil {

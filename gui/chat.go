@@ -9,6 +9,8 @@ type NCurse struct {
 	scr       *gc.Window
 	outputWin *gc.Window
 	inputWin  *gc.Window
+
+	stopped chan bool
 }
 
 func NewNCurse() *NCurse {
@@ -30,6 +32,7 @@ func NewNCurse() *NCurse {
 		outputWin: outwin,
 		inputWin:  inwin,
 		scr:       screen,
+		stopped:   make(chan bool),
 	}
 
 	return n
@@ -71,37 +74,51 @@ func (n *NCurse) Close() {
 	n.outputWin.Delete()
 	n.inputWin.Delete()
 	gc.End()
+	<-n.stopped
 }
 
-func (n *NCurse) FetchOne() string {
+func (n *NCurse) FetchOne() (string, error) {
 	for {
 		n.clearInput()
 		gc.Update()
 		_, width := n.inputWin.MaxYX()
 		inp, err := n.inputWin.GetString(width - 6)
 		if err != nil {
-			log.Fatal("Could not fetch user input:", err)
+			n.stopped <- true
+			return "", err
 		}
 		if len(inp) < 1 {
 			continue
 		}
 		n.clearInput()
-		return inp
+		return inp, nil
 	}
 }
 
 type HeadlessChat struct {
 	Input chan string
+
+	stop chan bool
 }
 
 func NewHeadlessChat() *HeadlessChat {
-	return &HeadlessChat{make(chan string, 1)}
+	return &HeadlessChat{
+		Input: make(chan string, 1),
+		stop:  make(chan bool),
+	}
 }
 
-func (g *HeadlessChat) FetchOne() string {
-	return <-g.Input
+func (g *HeadlessChat) FetchOne() (string, error) {
+	select {
+	case msg := <-g.Input:
+		return msg, nil
+	case <-g.stop:
+		return "", nil
+	}
 }
 
-func (g *HeadlessChat) Close() {}
+func (g *HeadlessChat) Close() {
+	g.stop <- true
+}
 
 func (n *HeadlessChat) SetChatHistory(msgs []string) {}

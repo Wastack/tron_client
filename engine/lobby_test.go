@@ -44,10 +44,10 @@ func (m *mockServer) hostServer() {
 	}
 
 	outJson := &types.ConnRespMsg{
-		&types.JsonMsg{Type: "connect"},
-		"#FF0000",
-		[]types.LobbyPlayer{{Color: "#00FF00", Name: "Zold", Ready: true}, {Color: "#0000FF", Name: "Kek", Ready: false}},
-		"dsgjngohnthgkjdflkn",
+		JsonMsg: &types.JsonMsg{Type: "connect"},
+		Color:   "#FF0000",
+		Players: []types.LobbyPlayer{{Color: "#00FF00", Name: "Zold", Ready: true}, {Color: "#0000FF", Name: "Kek", Ready: false}},
+		Id:      "dsgjngohnthgkjdflkn",
 	}
 	outBytes, err := json.Marshal(outJson)
 	if err != nil {
@@ -75,8 +75,7 @@ func TestChatCommunicationWithServer(t *testing.T) {
 	defer server.Close()
 
 	// make engine listen to GUI
-	go lobby.Listen()
-	defer lobby.Close()
+	go lobby.ListenUserInput()
 
 	// assume user called /connect
 	lobby.chatGui.(*gui.HeadlessChat).Input <- "/connect"
@@ -103,9 +102,9 @@ func TestChatCommunicationWithServer(t *testing.T) {
 
 	// let's say Kek sent a message
 	outBytes, err := json.Marshal(&types.ChatMsg{
-		&types.JsonMsg{Type: "chat"},
-		"Hey, what's up? I'm looking forward to play Tron with you",
-		"#0000FF",
+		JsonMsg: &types.JsonMsg{Type: "chat"},
+		Message: "Hey, what's up? I'm looking forward to play Tron with you",
+		Color:   "#0000FF",
 	})
 	if err != nil {
 		log.Fatalf("Cannot marshal chat message")
@@ -123,9 +122,9 @@ func TestChatCommunicationWithServer(t *testing.T) {
 
 	// let's say Kek sent ready
 	outBytes, err = json.Marshal(&types.ReadyMsg{
-		&types.JsonMsg{Type: "chat"},
-		true,
-		"#0000FF",
+		JsonMsg: &types.JsonMsg{Type: "ready"},
+		Value:   true,
+		Color:   types.PlayerColor("#0000FF"),
 	})
 	if err != nil {
 		log.Fatalf("Cannot marshal chat message")
@@ -134,6 +133,14 @@ func TestChatCommunicationWithServer(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// player's state should change to true
-	assert.Equal(lobby.players[0].Ready, true)
+	assert.Equal(lobby.players[1].Ready, true)
+
+	// assume server sends start game
+	outBytes, _ = json.Marshal(&types.JsonMsg{Type: "start_game"})
+	server.sendMessage(outBytes)
+
+	time.Sleep(20 * time.Millisecond)
+	assert.Nil(lobby.net)
+	assert.Nil(lobby.chatGui)
 
 }

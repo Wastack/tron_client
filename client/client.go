@@ -47,7 +47,7 @@ func (c *Client) Listen() {
 		// TODO suuport connack, start game, server tick, error message
 		switch gen.Type {
 		case "ready":
-			readyMsg := types.ReadyMsg{}
+			readyMsg := &types.ReadyMsg{}
 			err = json.Unmarshal([]byte(msg), readyMsg)
 			if err != nil {
 				log.Printf("Listen: malformed ready message")
@@ -71,8 +71,7 @@ func (c *Client) Listen() {
 			}
 			c.Msgs <- conAck
 		case "start_game":
-			// TODO
-			log.Printf("Listen: Unkown message type")
+			c.Msgs <- gen
 		default:
 			log.Printf("Listen: Unkown message type")
 		}
@@ -83,6 +82,7 @@ func (c *Client) Close() {
 	log.Printf("Close network connection")
 	c.connected = false
 	c.conn.Close()
+	c.conn = nil
 }
 
 func (c *Client) SendMessage(message []byte) error {
