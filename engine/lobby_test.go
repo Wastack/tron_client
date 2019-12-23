@@ -135,6 +135,15 @@ func TestChatCommunicationWithServer(t *testing.T) {
 	// player's state should change to true
 	assert.Equal(lobby.players[1].Ready, true)
 
+	// client send's ready signal
+	lobby.chatGui.(*gui.HeadlessChat).Input <- "/ready"
+	// server should receive ready
+	msg, err := bufio.NewReader(server.con).ReadString('\n')
+	assert.Nil(err)
+	readyMsg := &types.ReadyMsg{}
+	err = json.Unmarshal([]byte(msg), readyMsg)
+	assert.True(readyMsg.Value)
+
 	// assume server sends start game
 	outBytes, _ = json.Marshal(&types.JsonMsg{Type: "start_game"})
 	server.sendMessage(outBytes)

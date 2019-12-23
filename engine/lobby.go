@@ -28,6 +28,30 @@ var commands commandMap = commandMap{
 	"/players": {"List players", executePlayers},
 	"/setname": {"Set your name", executeSetname},
 	"/exit":    {"Close application", func(*LobbyEngine, ...string) {}}, // exit is handle elsewhere
+	"/ready":   {"Send ready signal: /ready [false]", executeReady},
+}
+
+func executeReady(c *LobbyEngine, args ...string) {
+	if c.net == nil {
+		c.PushMessage(sys_n, "You are not connected")
+		return
+	}
+	readyMsg := &types.ReadyMsg{
+		Value: true,
+	}
+	if len(args) > 0 {
+		if strings.ToLower(args[0]) != "false" {
+			c.PushMessage(sys_n, "Unexpected argument for /ready")
+			return
+		}
+		readyMsg.Value = false
+	}
+	// send ready through server
+	bytes, err := json.Marshal(readyMsg)
+	if err != nil {
+		log.Fatalf("Failed to marshal ready message")
+	}
+	c.net.SendMessage(bytes)
 }
 
 func executeSetname(c *LobbyEngine, args ...string) {
