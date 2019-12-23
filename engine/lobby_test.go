@@ -1,135 +1,139 @@
 package engine
 
-
 import (
-    "testing"
-    "github.com/tron_client/gui"
-    "github.com/tron_client/types"
-    "net"
-    "log"
-    "encoding/json"
-    "bufio"
-    "time"
-    "os"
-    "fmt"
+	"bufio"
+	"encoding/json"
+	"github.com/stretchr/testify/assert"
+	"github.com/tron_client/gui"
+	"github.com/tron_client/types"
+	"log"
+	"net"
+	"strings"
+	"testing"
+	"time"
 )
 
 type mockServer struct {
-    con net.Conn
-    ready chan bool
+	con   net.Conn
+	ready chan bool
 }
 
 func (m *mockServer) Close() {
-    if m.con != nil {
-	m.con.Close()
-    }
+	if m.con != nil {
+		m.con.Close()
+	}
 }
 
 func (m *mockServer) hostServer() {
-    l, err := net.Listen("tcp4", ":8765")
-    defer l.Close()
-    c, err := l.Accept()
-    if err != nil {
-        log.Fatalf("Unable to connect to client")
-    }
-    m.con = c
-    fmt.Println("hostServer: accepted connection successfully")
+	log.SetFlags(log.Lshortfile)
+	l, err := net.Listen("tcp4", ":8765")
+	defer l.Close()
+	if err != nil {
+		log.Fatalf("Unable to listen on port 8765: %s", err.Error())
+	}
+	c, err := l.Accept()
+	if err != nil {
+		log.Fatalf("Unable to connect to client")
+	}
+	m.con = c
 
-    // read connection request but do nothing with it
-    _, err = bufio.NewReader(c).ReadString('\n')
-    if err != nil {
-	log.Printf("Unable to read connection request message")
-    }
-    fmt.Println("hostServer: connection request received")
+	// read connection request but do nothing with it
+	_, err = bufio.NewReader(c).ReadString('\n')
+	if err != nil {
+		log.Printf("Unable to read connection request message")
+	}
 
-    outJson := &types.ConnRespMsg {
-	&types.JsonMsg{Type: "connect"},
-	"#FF0000",
-	[]types.LobbyPlayer{{Color: "#00FF00", Name: "Zold", Ready: true}, {Color: "#0000FF", Name: "Kek", Ready: false}},
-	"dsgjngohnthgkjdflkn",
-    }
-    outBytes, err := json.Marshal(outJson)
-    if err != nil {
-        log.Fatalf("Listen: malformed chat message")
-    }
-    c.Write(outBytes)
-    m.ready <- true
+	outJson := &types.ConnRespMsg{
+		&types.JsonMsg{Type: "connect"},
+		"#FF0000",
+		[]types.LobbyPlayer{{Color: "#00FF00", Name: "Zold", Ready: true}, {Color: "#0000FF", Name: "Kek", Ready: false}},
+		"dsgjngohnthgkjdflkn",
+	}
+	outBytes, err := json.Marshal(outJson)
+	if err != nil {
+		log.Fatalf("Listen: malformed chat message")
+	}
+	m.sendMessage(outBytes)
+	close(m.ready)
 
 }
 
-func assertEqual(t *testing.T, a interface{}, b interface{}) {
-    if a == b {
-	return
-    }
-    t.Fatalf("%v != %v", a, b)
+func (m *mockServer) sendMessage(msg []byte) {
+	m.con.Write(append(msg, '\n'))
 }
 
 func TestChatCommunicationWithServer(t *testing.T) {
-    lobby := NewLobbyEngine(types.Headless)
+	assert := assert.New(t)
+	lobby := NewLobbyEngine(types.Headless)
 
+	// start server
+	server := mockServer{ready: make(chan bool)}
 
-    // start server
-    server := mockServer{ready: make(chan bool)}
-    defer server.Close()
+	// server should shut down if client's disconnected successfully. No need to
+	// shut down server manually.
+	go server.hostServer()
+	defer server.Close()
 
-    // server should shut down if client's disconnected successfully. No need to
-    // shut down server manually.
-    go server.hostServer()
+	// make engine listen to GUI
+	go lobby.Listen()
+	defer lobby.Close()
 
-    // make engine listen to GUI
-    go lobby.Listen()
-    defer lobby.Close()
+	// assume user called /connect
+	lobby.chatGui.(*gui.HeadlessChat).Input <- "/connect"
 
-    // assume user called /connect
-    lobby.chatGui.(*gui.HeadlessChat).Input <- "/connect"
+	select {
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Timeout while waiting for server")
+	case <-server.ready:
+		t.Logf("Server ready")
+	}
+	// wait for connect response to be processed
+	time.Sleep(20 * time.Millisecond)
 
-    fmt.Println("Waiting for server")
-    <-time.After(1*time.Second)
-    fmt.Println("done waiting")
+	if len(lobby.players) != 2 {
+		t.Fatalf("Number of players incorrect: %d", len(lobby.players))
+	}
+	assert.Equal(types.PlayerColor("#00FF00"), lobby.players[0].Color)
+	assert.Equal(types.PlayerColor("#0000FF"), lobby.players[1].Color)
+	assert.Equal("Zold", lobby.players[0].Name)
+	assert.Equal("Kek", lobby.players[1].Name)
+	assert.Equal(true, lobby.players[0].Ready)
 
-    if len(lobby.players) != 2 {
-	t.Fatalf("Number of players incorrect: %d", len(lobby.players))
-    }
-    assertEqual(t, lobby.players[0].Color, "#00FF00")
-    assertEqual(t, lobby.players[1].Color, "#0000FF")
-    assertEqual(t, lobby.players[0].Name, "Zold")
-    assertEqual(t, lobby.players[1].Name, "Kek")
-    assertEqual(t, lobby.players[0].Ready, true)
+	chatHistoryCount := len(lobby.msg_history)
 
-    //chatHistoryCount := len(lobby.msg_history)
+	// let's say Kek sent a message
+	outBytes, err := json.Marshal(&types.ChatMsg{
+		&types.JsonMsg{Type: "chat"},
+		"Hey, what's up? I'm looking forward to play Tron with you",
+		"#0000FF",
+	})
+	if err != nil {
+		log.Fatalf("Cannot marshal chat message")
+	}
+	server.sendMessage(outBytes)
+	time.Sleep(20 * time.Millisecond)
 
-    //// let's say Kek sent a message
-    //outBytes, err := json.Marshal(&types.ChatMsg{
-    //    &types.JsonMsg{Type: "chat"},
-    //    "Hey, what's up? I'm looking forward to play Tron with you",
-    //    "#0000FF",
-    //})
-    //if err != nil {
-    //    log.Fatalf("Cannot marshal chat message")
-    //}
-    //server.con.Write(outBytes)
+	// assert for a new entry in message history
+	assert.Equal(chatHistoryCount+1, len(lobby.msg_history))
+	// history  should contain the message
+	if !strings.Contains(lobby.msg_history[chatHistoryCount],
+		"Hey, what's up? I'm looking forward to play Tron with you") {
+		t.Fatalf("Received message is not in history")
+	}
 
-    //// assert for a new entry in message history
-    //assertEqual(t, len(lobby.msg_history), chatHistoryCount+1)
-    //// history  should contain the message
-    //if !strings.Contains(lobby.msg_history[chatHistoryCount], 
-    //        "Hey, what's up? I'm looking forward to play Tron with you") {
-    //    t.Fatalf("Received message is not in history")
-    //}
+	// let's say Kek sent ready
+	outBytes, err = json.Marshal(&types.ReadyMsg{
+		&types.JsonMsg{Type: "chat"},
+		true,
+		"#0000FF",
+	})
+	if err != nil {
+		log.Fatalf("Cannot marshal chat message")
+	}
+	server.sendMessage(outBytes)
+	time.Sleep(20 * time.Millisecond)
 
-    //// let's say Kek sent ready
-    //outBytes, err = json.Marshal(&types.ReadyMsg{
-    //    &types.JsonMsg{Type: "chat"},
-    //    true,
-    //    "#0000FF",
-    //})
-    //if err != nil {
-    //    log.Fatalf("Cannot marshal chat message")
-    //}
-    //server.con.Write(outBytes)
- 
-    //// player's state should change to true
-    //assertEqual(t, lobby.players[0].Ready, true)
+	// player's state should change to true
+	assert.Equal(lobby.players[0].Ready, true)
 
-    //stop_chan <- true
 }
