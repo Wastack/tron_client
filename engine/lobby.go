@@ -56,7 +56,7 @@ func executeReady(c *LobbyEngine, args ...string) {
 
 func executeSetname(c *LobbyEngine, args ...string) {
 	if len(args) < 1 {
-		c.PushMessage(sys_n, fmt.Sprintf("Your name is: %s", c.myPlayer.Name))
+		c.PushMessage(sys_n, "Your name is: %s", c.myPlayer.Name)
 		return
 	}
 	name := &args[0]
@@ -65,6 +65,7 @@ func executeSetname(c *LobbyEngine, args ...string) {
 		return
 	}
 	c.myPlayer.Name = *name
+	c.PushMessage(sys_n, "Name has been set to: '%s'", *name)
 }
 
 func executePlayers(c *LobbyEngine, _ ...string) {
@@ -73,11 +74,11 @@ func executePlayers(c *LobbyEngine, _ ...string) {
 	}
 
 	// list players including this client
-	c.PushMessage(sys_n, fmt.Sprintf("Player: %s, Color: %s, Ready: %t",
-		c.myPlayer.Name, c.myPlayer.Color, c.myPlayer.Ready))
+	c.PushMessage(sys_n, "Player: %s, Color: %s, Ready: %t",
+		c.myPlayer.Name, c.myPlayer.Color, c.myPlayer.Ready)
 	for i := range c.players {
-		c.PushMessage(sys_n, fmt.Sprintf("Player: %s, Color: %s, Ready: %t",
-			c.players[i].Name, c.players[i].Color, c.players[i].Ready))
+		c.PushMessage(sys_n, "Player: %s, Color: %s, Ready: %t", c.players[i].Name,
+			c.players[i].Color, c.players[i].Ready)
 	}
 }
 
@@ -132,7 +133,7 @@ func executeConnect(c *LobbyEngine, args ...string) {
 	c.net = cli
 	resp, err := c.net.ConnectRequest(c.myPlayer.Name, "", "private")
 	if err != nil {
-		c.PushMessage(sys_n, fmt.Sprintf("Server error: %s", err.Error()))
+		c.PushMessage(sys_n, "Server error: %s", err.Error())
 	}
 	c.players = resp.Players
 	c.myPlayer.Color = resp.Color
@@ -166,20 +167,18 @@ func executeConnect(c *LobbyEngine, args ...string) {
 					}
 					// assign new ready value
 					p.Ready = r.Value
-					c.PushMessage(sys_n, fmt.Sprintf("%s set ready to %t", p.Name, r.Value))
+					c.PushMessage(sys_n, "%s set ready to %t", p.Name, r.Value)
 				case "connection":
 					ack := m.(*types.ConnAckMsg)
 					switch ack.Action {
 					case "disconnect":
-						c.PushMessage(sys_n, fmt.Sprintf(
-							"Player %s (%s) disconnected", ack.Player.Name, ack.Player.Color))
+						c.PushMessage(sys_n, "Player %s (%s) disconnected", ack.Player.Name, ack.Player.Color)
 						err = c.removeByColor(ack.Player.Color)
 						if err != nil {
 							c.PushMessage(sys_n, "Error: player unknown")
 						}
 					case "connec":
-						c.PushMessage(sys_n, fmt.Sprintf(
-							"Player %s (%s) connected", ack.Player.Name, ack.Player.Color))
+						c.PushMessage(sys_n, "Player %s (%s) connected", ack.Player.Name, ack.Player.Color)
 						// add to players list
 						c.players = append(c.players, ack.Player)
 					default:
@@ -231,10 +230,11 @@ func NewLobbyEngine(guiType types.GuiKind) *LobbyEngine {
 	return &c
 }
 
-func (c *LobbyEngine) PushMessage(sender string, msg string) {
+func (c *LobbyEngine) PushMessage(sender string, msg string, args ...interface{}) {
 	if len(msg) < 1 {
 		log.Printf("Attempt tp push empty message.")
 	}
+	msg = fmt.Sprintf(msg, args...)
 	c.msg_history = append(c.msg_history, fmt.Sprintf("%s: %s", sender, msg))
 	c.chatGui.SetChatHistory(c.msg_history)
 }
@@ -260,7 +260,7 @@ func (c *LobbyEngine) ListenUserInput() {
 			if command, ok := commands[words[0]]; ok {
 				command.execute(c, words[1:]...)
 			} else {
-				c.PushMessage(sys_n, fmt.Sprintf("Unkown command: '%s'", words[0]))
+				c.PushMessage(sys_n, "Unkown command: '%s'", words[0])
 			}
 		} else {
 			// simple message
