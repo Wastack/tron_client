@@ -7,6 +7,7 @@ import (
 	"github.com/tron_client/gui"
 	"github.com/tron_client/types"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -15,20 +16,23 @@ const sys_n string = "Sys"
 
 type command struct {
 	description string
+	arguments   []string
 	execute     func(*LobbyEngine, ...string)
 }
 
 type commandMap map[string]command
 
 var commands commandMap = commandMap{
-	"/help":    {"Show help", executeHelp},
-	"/connect": {"Connect to server: /connect [address] [port]", executeConnect},
-	"/con":     {"", executeConnect},
-	"/disc":    {"Disconnect from server", executeDisconnect},
-	"/players": {"List players", executePlayers},
-	"/setname": {"Set your name", executeSetname},
-	"/exit":    {"Close application", func(*LobbyEngine, ...string) {}}, // exit is handle elsewhere
-	"/ready":   {"Send ready signal: /ready [false]", executeReady},
+	"/connect":    {"Connect to server. Default: localhost:8765", []string{"[address]", "[port]"}, executeConnect},
+	"/con":        {"", []string{}, executeConnect},
+	"/disc":       {"", []string{}, executeDisconnect},
+	"/disconnect": {"Disconnect from server", []string{}, executeDisconnect},
+	"/players":    {"List players", []string{}, executePlayers},
+	"/setname":    {"Set your name, or print if no argument", []string{"[NAME]"}, executeSetname},
+	"/ready":      {"Send ready signal: /ready", []string{"[false]"}, executeReady},
+	// handled elsewhere
+	"/help": {"Show help", []string{}, func(*LobbyEngine, ...string) {}},
+	"/exit": {"Close application", []string{}, func(*LobbyEngine, ...string) {}},
 }
 
 func executeReady(c *LobbyEngine, args ...string) {
@@ -103,10 +107,6 @@ func (c *LobbyEngine) Close() {
 	// close GUI
 	log.Printf("Closing GUI")
 	c.chatGui.Close()
-}
-
-func executeHelp(c *LobbyEngine, _ ...string) {
-	c.PushMessage(sys_n, "You need help? SUCKER!! (not implemented)")
 }
 
 func executeConnect(c *LobbyEngine, args ...string) {
@@ -257,7 +257,28 @@ func (c *LobbyEngine) ListenUserInput() {
 			if words[0] == "/exit" {
 				return
 			}
-			if command, ok := commands[words[0]]; ok {
+			if words[0] == "/help" {
+				// collect keys
+				keys := make([]string, len(commands))
+				var i int
+				for key, _ := range commands {
+					keys[i] = key
+					i++
+				}
+
+				// sort to alphabetic order
+				sort.Strings(keys)
+
+				// print help
+				for _, key := range keys {
+					arguments := strings.Join(commands[key].arguments, " ")
+					if arguments != "" {
+						arguments = " " + arguments
+					}
+					c.PushMessage(sys_n, "%s%s: %s", key, arguments, commands[key].description)
+				}
+				continue
+			} else if command, ok := commands[words[0]]; ok {
 				command.execute(c, words[1:]...)
 			} else {
 				c.PushMessage(sys_n, "Unkown command: '%s'", words[0])
