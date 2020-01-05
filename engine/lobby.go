@@ -29,7 +29,7 @@ var commands commandMap = commandMap{
 	"/disconnect": {"Disconnect from server", []string{}, executeDisconnect},
 	"/players":    {"List players", []string{}, executePlayers},
 	"/setname":    {"Set your name, or print if no argument", []string{"[NAME]"}, executeSetname},
-	"/ready":      {"Send ready signal: /ready", []string{"[false]"}, executeReady},
+	"/ready":      {"Send ready signal", []string{"[false]"}, executeReady},
 	// handled elsewhere
 	"/help": {"Show help", []string{}, func(*LobbyEngine, ...string) {}},
 	"/exit": {"Close application", []string{}, func(*LobbyEngine, ...string) {}},
@@ -213,7 +213,7 @@ type LobbyEngine struct {
 func NewLobbyEngine(guiType types.GuiKind) *LobbyEngine {
 	var g gui.ChatGui
 	switch guiType {
-	case types.NCurses:
+	case types.NCursesLobby:
 		g = gui.NewNCurse()
 	case types.Headless:
 		g = gui.NewHeadlessChat()

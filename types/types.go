@@ -35,7 +35,7 @@ type ConnRespMsg struct {
 type ReadyMsg struct {
 	*JsonMsg
 	Value bool        `json:"value"`
-	Color PlayerColor `json:"color",omitempty`
+	Color PlayerColor `json:"color,omitempty"`
 }
 
 type ChatMsg struct {
@@ -50,6 +50,49 @@ type ConnAckMsg struct {
 	Action string      `json:"action"`
 }
 
+type TickMsg struct {
+	*JsonMsg
+	Countdown int          `json:"countdown"`
+	Changes   []GameChange `json:"changes"`
+	LastTick  bool         `json:"lasttick"`
+}
+
+type GameChange struct {
+	Color PlayerColor `json:"color"`
+	Dir   Direction   `json:"direction"`
+	Dead  bool        `json:"dead"`
+}
+
+type PlayerEventMsg struct {
+	*JsonMsg
+	Color PlayerColor `json:"color"`
+	Dir   Direction   `json:"direction"`
+}
+
+type Direction string
+
+func (d Direction) Opposite() Direction {
+	switch d {
+	case Up:
+		return Down
+	case Down:
+		return Up
+	case Left:
+		return Right
+	case Right:
+		return Left
+	default:
+		panic("Unknown direction")
+	}
+}
+
+const (
+	Up    = "up"
+	Down  = "down"
+	Left  = "left"
+	Right = "right"
+)
+
 func (m *JsonMsg) GetType() string {
 	return m.Type
 }
@@ -57,6 +100,7 @@ func (m *JsonMsg) GetType() string {
 type GuiKind int
 
 const (
-	NCurses  GuiKind = iota
-	Headless GuiKind = iota
+	NCursesLobby GuiKind = iota
+	NCursesGame  GuiKind = iota
+	Headless     GuiKind = iota
 )

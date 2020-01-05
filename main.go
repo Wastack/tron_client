@@ -15,7 +15,7 @@ func main() {
 	defer f.Close()
 	log.SetOutput(f)
 
-	lobby := engine.NewLobbyEngine(types.NCurses)
+	lobby := engine.NewLobbyEngine(types.NCursesLobby)
 	lobby.ListenUserInput()
 	lobby.Close()
 }

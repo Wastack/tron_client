@@ -9,8 +9,6 @@ type NCurse struct {
 	scr       *gc.Window
 	outputWin *gc.Window
 	inputWin  *gc.Window
-
-	stopped chan bool
 }
 
 func NewNCurse() *NCurse {
@@ -32,7 +30,6 @@ func NewNCurse() *NCurse {
 		outputWin: outwin,
 		inputWin:  inwin,
 		scr:       screen,
-		stopped:   make(chan bool),
 	}
 
 	return n
@@ -74,7 +71,6 @@ func (n *NCurse) Close() {
 	n.outputWin.Delete()
 	n.inputWin.Delete()
 	gc.End()
-	<-n.stopped
 }
 
 func (n *NCurse) FetchOne() (string, error) {
@@ -84,7 +80,6 @@ func (n *NCurse) FetchOne() (string, error) {
 		_, width := n.inputWin.MaxYX()
 		inp, err := n.inputWin.GetString(width - 6)
 		if err != nil {
-			n.stopped <- true
 			return "", err
 		}
 		if len(inp) < 1 {

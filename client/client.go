@@ -44,7 +44,6 @@ func (c *Client) Listen() {
 			break
 		}
 
-		// TODO suuport connack, start game, server tick, error message
 		switch gen.Type {
 		case "ready":
 			readyMsg := &types.ReadyMsg{}
